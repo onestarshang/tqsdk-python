@@ -44,7 +44,7 @@ from tqsdk.entity import Entity
 from tqsdk.objs import Quote, Kline, Tick, Account, Position, Order, Trade
 from tqsdk.sim import TqSim
 from tqsdk.tqwebhelper import TqWebHelper
-from tqsdk.utils import _generate_uuid, _quotes_add_night
+from tqsdk.utils import _generate_uuid, _quotes_add_night, _get_log_format, _get_log_name, _clear_logs, _log_decorator
 from .__version__ import __version__
 
 
@@ -142,45 +142,13 @@ class TqApi(object):
         # 初始化 logger
         self._logger = logging.getLogger("TqApi")
         self._logger.setLevel(logging.DEBUG)
-        if not self._logger.handlers:
-            sh = logging.StreamHandler()
-            sh.setLevel(logging.INFO)
-            if backtest:  # 如果回测, 则去除第一个本地时间
-                log_format = logging.Formatter('%(levelname)s - %(message)s')
-            else:
-                log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            sh.setFormatter(log_format)
-            self._logger.addHandler(sh)
-            if debug:
-                fh = logging.FileHandler(filename=debug)
-                fh.setFormatter(log_format)
-                self._logger.addHandler(fh)
-
+        
         # 记录参数
+        self._debug = debug  # 日志选项
+        self._auth = auth  # 支持用户授权
         self._account = TqSim() if account is None else account
         self._backtest = backtest
         self._stock = False if isinstance(self._backtest, TqReplay) else _stock
-
-        # 支持用户授权
-        self._access_token = 'eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJobi1MZ3ZwbWlFTTJHZHAtRmlScjV5MUF5MnZrQmpLSFFyQVlnQ0UwR1JjIn0.eyJqdGkiOiIwY2UwOTM2Ny0xYjk2LTQ0NTktOGU2My1hYWM1ZTA3Mjc1ZTIiLCJleHAiOjE2MTU1Mzk1MTQsIm5iZiI6MCwiaWF0IjoxNTg0MDAzNTE0LCJpc3MiOiJodHRwczovL2F1dGguc2hpbm55dGVjaC5jb20vYXV0aC9yZWFsbXMvc2hpbm55dGVjaCIsInN1YiI6IjYzMzJhZmUwLWU5OWQtNDc1OC04MjIzLWY5OTBiN2RmOGY4NSIsInR5cCI6IkJlYXJlciIsImF6cCI6InNoaW5ueV90cSIsImF1dGhfdGltZSI6MCwic2Vzc2lvbl9zdGF0ZSI6IjUzYTEyYmNkLTc3M2EtNDcyZC1iZWVlLWZlMmQ1ODAzYjU0YyIsImFjciI6IjEiLCJzY29wZSI6ImF0dHJpYnV0ZXMiLCJncmFudHMiOnsiZmVhdHVyZXMiOlsiY21iIiwiYWR2Il0sImFjY291bnRzIjpbIioiXX19.BmqzmorwITPd2YLP9EbhlIxkTDNTAY-PNPfM9LwOkOc5XJlSK34nHZwW14mmIScYiohhN5iaVtPrPNsohFfPcH-FxhFmmr9M_xIJLDf4zw2ObcZwVGTQFnIExjdpj2ej82bPT0yoBBFoOH3NhFuK0agifE0WOp0lXf2kzQsQncZ-y9djCEuwbuZapNmdVhGsWWGt7gMd9ZJNrmViZifSWkOrpiowIQ4fOPp1L2DJju8QldwHtyPnYTZtN56x14Xd7v-4-VB3vWEoHB99r36bjhlXJsxuiZrQom0esahgtV_7gx_G95bN04XevriRXG9JzOSoHhpYQFKqjZlSQ4L7vw'
-        if auth:
-            comma_index = auth.find(',')
-            email, pwd = auth[:comma_index], auth[comma_index + 1:]
-            headers = {
-                "User-Agent": "tqsdk-python %s" % __version__,
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            response = requests.post("https://auth.shinnytech.com/auth/realms/shinnytech/protocol/openid-connect/token",
-                                     headers=headers,
-                                     data="grant_type=password&username=%s&password=%s&client_id=shinny_tq&client_secret=be30b9f4-6862-488a-99ad-21bde0400081" % (email, pwd),
-                                     timeout=30)
-            if response.status_code == 200:
-                self._access_token = json.loads(response.content)["access_token"]
-                self._logger.info("用户权限认证成功")
-            else:
-                self._logger.warning("用户权限认证失败 (%d,%s)" % (response.status_code, response.content))
-
         self._ins_url = os.getenv("TQ_INS_URL", "https://openmd.shinnytech.com/t/md/symbols/latest.json")
         self._md_url = os.getenv("TQ_MD_URL", "ws://nfmd.shinnytech.com/t/nfmd/front/mobile" if self._stock else "wss://openmd.shinnytech.com/t/md/front/mobile")
         self._td_url = os.getenv("TQ_TD_URL", None)
@@ -255,6 +223,7 @@ class TqApi(object):
         self._diffs = [{}]
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def copy(self) -> 'TqApi':
         """
         创建当前TqApi的一个副本. 这个副本可以在另一个线程中使用
@@ -269,6 +238,7 @@ class TqApi(object):
         _merge_diff(slave_api._data, _copy_diff, slave_api._prototype, False)
         return slave_api
 
+    @_log_decorator
     def close(self) -> None:
         """
         关闭天勤接口实例并释放相应资源
@@ -300,6 +270,7 @@ class TqApi(object):
             self._run_once()
         self._loop.run_until_complete(self._loop.shutdown_asyncgens())
         self._loop.close()
+        _clear_logs()  # 清除过期日志文件
 
     def __enter__(self):
         return self
@@ -308,6 +279,7 @@ class TqApi(object):
         self.close()
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_quote(self, symbol: str) -> Quote:
         """
         获取指定合约的盘口行情.
@@ -359,6 +331,7 @@ class TqApi(object):
         return quote
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_kline_serial(self, symbol: Union[str, List[str]], duration_seconds: int, data_length: int = 200,
                          chart_id: Optional[str] = None) -> pd.DataFrame:
         """
@@ -497,6 +470,7 @@ class TqApi(object):
         return serial["df"]
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_tick_serial(self, symbol: str, data_length: int = 200, chart_id: Optional[str] = None) -> pd.DataFrame:
         """
         获取tick序列数据
@@ -577,6 +551,7 @@ class TqApi(object):
         return serial["df"]
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def insert_order(self, symbol: str, direction: str, offset: str, volume: int, limit_price: Optional[float] = None,
                      order_id: Optional[str] = None) -> Order:
         """
@@ -667,6 +642,7 @@ class TqApi(object):
         return order
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def cancel_order(self, order_or_order_id: Union[str, Order]) -> None:
         """
         发送撤单指令. **注意: 指令将在下次调用** :py:meth:`~tqsdk.api.TqApi.wait_update` **时发出**
@@ -718,6 +694,7 @@ class TqApi(object):
         self._send_pack(msg)
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_account(self) -> Account:
         """
         获取用户账户资金信息
@@ -744,6 +721,7 @@ class TqApi(object):
                              self._prototype["trade"]["*"]["accounts"]["@"])
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_position(self, symbol: Optional[str] = None) -> Union[Position, Entity]:
         """
         获取用户持仓信息
@@ -784,6 +762,7 @@ class TqApi(object):
         return _get_obj(self._data, ["trade", self._account._account_id, "positions"])
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_order(self, order_id: Optional[str] = None) -> Union[Order, Entity]:
         """
         获取用户委托单信息
@@ -823,6 +802,7 @@ class TqApi(object):
         return _get_obj(self._data, ["trade", self._account._account_id, "orders"])
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def get_trade(self, trade_id: Optional[str] = None) -> Union[Trade, Entity]:
         """
         获取用户成交信息
@@ -846,6 +826,7 @@ class TqApi(object):
         return _get_obj(self._data, ["trade", self._account._account_id, "trades"])
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def wait_update(self, deadline: Optional[float] = None) -> None:
         """
         等待业务数据更新
@@ -923,6 +904,7 @@ class TqApi(object):
             update_task.cancel()
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def is_changing(self, obj: Any, key: Union[str, List[str], None] = None) -> bool:
         """
         判定obj最近是否有更新
@@ -1028,6 +1010,7 @@ class TqApi(object):
         return False
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def is_serial_ready(self, obj: pd.DataFrame) -> bool:
         """
         判断是否已经从服务器收到了所有订阅的数据
@@ -1059,6 +1042,7 @@ class TqApi(object):
         return self._serials[id(obj)]["init"]
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def create_task(self, coro: asyncio.coroutine) -> asyncio.Task:
         """
         创建一个task
@@ -1093,6 +1077,7 @@ class TqApi(object):
         return task
 
     # ----------------------------------------------------------------------
+    @_log_decorator
     def register_update_notify(self, obj: Optional[Any] = None, chan: Optional[TqChan] = None) -> TqChan:
         """
         注册一个channel以便接受业务数据更新通知
@@ -1152,9 +1137,46 @@ class TqApi(object):
         self._event_rev += 1
         return org_call_soon(callback, *args, **kargs)
 
+    def _auth_account(self):
+        self._access_token = 'eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJobi1MZ3ZwbWlFTTJHZHAtRmlScjV5MUF5MnZrQmpLSFFyQVlnQ0UwR1JjIn0.eyJqdGkiOiIwY2UwOTM2Ny0xYjk2LTQ0NTktOGU2My1hYWM1ZTA3Mjc1ZTIiLCJleHAiOjE2MTU1Mzk1MTQsIm5iZiI6MCwiaWF0IjoxNTg0MDAzNTE0LCJpc3MiOiJodHRwczovL2F1dGguc2hpbm55dGVjaC5jb20vYXV0aC9yZWFsbXMvc2hpbm55dGVjaCIsInN1YiI6IjYzMzJhZmUwLWU5OWQtNDc1OC04MjIzLWY5OTBiN2RmOGY4NSIsInR5cCI6IkJlYXJlciIsImF6cCI6InNoaW5ueV90cSIsImF1dGhfdGltZSI6MCwic2Vzc2lvbl9zdGF0ZSI6IjUzYTEyYmNkLTc3M2EtNDcyZC1iZWVlLWZlMmQ1ODAzYjU0YyIsImFjciI6IjEiLCJzY29wZSI6ImF0dHJpYnV0ZXMiLCJncmFudHMiOnsiZmVhdHVyZXMiOlsiY21iIiwiYWR2Il0sImFjY291bnRzIjpbIioiXX19.BmqzmorwITPd2YLP9EbhlIxkTDNTAY-PNPfM9LwOkOc5XJlSK34nHZwW14mmIScYiohhN5iaVtPrPNsohFfPcH-FxhFmmr9M_xIJLDf4zw2ObcZwVGTQFnIExjdpj2ej82bPT0yoBBFoOH3NhFuK0agifE0WOp0lXf2kzQsQncZ-y9djCEuwbuZapNmdVhGsWWGt7gMd9ZJNrmViZifSWkOrpiowIQ4fOPp1L2DJju8QldwHtyPnYTZtN56x14Xd7v-4-VB3vWEoHB99r36bjhlXJsxuiZrQom0esahgtV_7gx_G95bN04XevriRXG9JzOSoHhpYQFKqjZlSQ4L7vw'
+        if self._auth:
+            comma_index = self._auth.find(',')
+            email, pwd = self._auth[:comma_index], self._auth[comma_index + 1:]
+            headers = {
+                "User-Agent": "tqsdk-python %s" % __version__,
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            response = requests.post("https://auth.shinnytech.com/auth/realms/shinnytech/protocol/openid-connect/token",
+                                     headers=headers,
+                                     data="grant_type=password&username=%s&password=%s&client_id=shinny_tq&client_secret=be30b9f4-6862-488a-99ad-21bde0400081" % (
+                                     email, pwd),
+                                     timeout=30)
+            if response.status_code == 200:
+                self._access_token = json.loads(response.content)["access_token"]
+                self._logger.info("用户权限认证成功")
+            else:
+                self._logger.warning("用户权限认证失败 (%d,%s)" % (response.status_code, response.content))
+
+
     def _setup_connection(self):
         """初始化"""
         tq_web_helper = TqWebHelper(self)
+
+        # TqWebHelper 初始化可能会修改 self._account、self._backtest，所以在这里才初始化 logger
+        # 在此之前使用 self._logger 不会打印日志
+        if not self._logger.handlers:
+            log_format = _get_log_format(self._backtest)
+            sh = logging.StreamHandler()
+            sh.setLevel(logging.INFO)
+            sh.setFormatter(log_format)
+            self._logger.addHandler(sh)
+            if isinstance(self._account, TqAccount) and self._debug is not False or self._debug:
+                log_name = self._debug if isinstance(self._debug, str) else _get_log_name()
+                fh = logging.FileHandler(filename=log_name)
+                fh.setFormatter(log_format)
+                self._logger.addHandler(fh)
+        self._auth_account()  # 支持用户授权
 
         # 等待复盘服务器启动
         if isinstance(self._backtest, TqReplay):
@@ -1873,6 +1895,7 @@ class TqApi(object):
         else:
             self._master._slave_send_pack(pack)
 
+    @_log_decorator
     def draw_text(self, base_k_dataframe: pd.DataFrame, text: str, x: Optional[int] = None, y: Optional[float] = None,
                   id: Optional[str] = None, board: str = "MAIN", color: Union[str, int] = "red") -> None:
         """
@@ -1917,6 +1940,7 @@ class TqApi(object):
         }
         self._send_chart_data(base_k_dataframe, id, serial)
 
+    @_log_decorator
     def draw_line(self, base_k_dataframe: pd.DataFrame, x1: int, y1: float, x2: int, y2: float,
                   id: Optional[str] = None, board: str = "MAIN", line_type: str = "LINE", color: Union[str, int] = "red",
                   width: int = 1) -> None:
@@ -1960,6 +1984,7 @@ class TqApi(object):
         }
         self._send_chart_data(base_k_dataframe, id, serial)
 
+    @_log_decorator
     def draw_box(self, base_k_dataframe: pd.DataFrame, x1: int, y1: float, x2: int, y2: float, id: Optional[str] = None,
                  board: str = "MAIN", bg_color: Union[str, int] = "black", color: Union[str, int] = "red", width: int = 1) -> None:
         """
