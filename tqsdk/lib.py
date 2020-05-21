@@ -9,7 +9,7 @@ from typing import Optional
 from tqsdk.api import TqApi
 from tqsdk.channel import TqChan
 from tqsdk.datetime import _is_in_trading_time
-from tqsdk.utils import _generate_uuid
+from tqsdk.utils import _generate_uuid, _log_decorator
 
 
 class TargetPosTaskSingleton(type):
@@ -34,6 +34,7 @@ class TargetPosTaskSingleton(type):
 class TargetPosTask(object, metaclass=TargetPosTaskSingleton):
     """目标持仓 task, 该 task 可以将指定合约调整到目标头寸"""
 
+    @_log_decorator
     def __init__(self, api: TqApi, symbol: str, price: str = "ACTIVE", offset_priority: str = "今昨,开",
                  trade_chan: Optional[TqChan] = None) -> None:
         """
@@ -87,6 +88,7 @@ class TargetPosTask(object, metaclass=TargetPosTaskSingleton):
         self._local_time_record = time.time() - 0.005  # 更新最新行情时间时的本地时间
         self._local_time_record_update_chan = TqChan(self._api, last_only=True)  # 监听 self._local_time_record 更新
 
+    @_log_decorator
     def set_target_volume(self, volume: int) -> None:
         """
         设置目标持仓手数
