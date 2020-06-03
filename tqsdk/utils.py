@@ -9,6 +9,8 @@ import random
 import uuid
 from functools import wraps
 
+from .__version__ import __version__
+
 RD = random.Random()  # 初始化随机数引擎
 DEBUG_DIR = os.path.join(os.path.expanduser('~'), ".tqsdk/logs")
 
@@ -20,9 +22,9 @@ def _generate_uuid(prefix=''):
 def _get_log_format(is_backtest=None):
     """返回日志格式"""
     if is_backtest:
-        return logging.Formatter('%(levelname)6s - %(message)s')
+        return logging.Formatter(f'tqsdk{__version__} - %(levelname)6s - %(message)s')
     else:
-        return logging.Formatter('%(asctime)s - %(levelname)6s - %(message)s')
+        return logging.Formatter(f'%(asctime)s - tqsdk{__version__} - %(levelname)6s - %(message)s')
 
 
 def _get_log_name():
