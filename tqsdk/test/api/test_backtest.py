@@ -2,6 +2,7 @@
 #-*- coding:utf-8 -*-
 __author__ = 'yanqiong'
 
+import logging
 import os
 import unittest
 import random
@@ -37,6 +38,7 @@ class TestTdBacktest(unittest.TestCase):
         # 预设服务器端响应
         dir_path = os.path.dirname(os.path.realpath(__file__))
         log_path = os.path.join(dir_path, "log_file", "test_backtest.script.lzma")
+        logging.disable(logging.CRITICAL)
         times = []
         for i in range(10):
             mock = MockServer()
