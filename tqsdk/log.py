@@ -32,14 +32,17 @@ def _get_log_name():
 
 def _clear_logs():
     """清除最后修改时间是 n 天前的日志"""
-    if not os.path.exists(DEBUG_DIR):
-        return
-    n = os.getenv("TQ_SAVE_LOG_DAYS", 30)
-    dt = datetime.datetime.now() - datetime.timedelta(days=int(n))
-    for log in os.listdir(DEBUG_DIR):
-        path = os.path.join(DEBUG_DIR, log)
-        if datetime.datetime.fromtimestamp(os.stat(path).st_mtime) < dt:
-            os.remove(path)
+    try:
+        if not os.path.exists(DEBUG_DIR):
+            return
+        n = os.getenv("TQ_SAVE_LOG_DAYS", 30)
+        dt = datetime.datetime.now() - datetime.timedelta(days=int(n))
+        for log in os.listdir(DEBUG_DIR):
+            path = os.path.join(DEBUG_DIR, log)
+            if datetime.datetime.fromtimestamp(os.stat(path).st_mtime) < dt:
+                os.remove(path)
+    except:
+        pass  # 忽略抛错
 
 
 def _traced(*args):
